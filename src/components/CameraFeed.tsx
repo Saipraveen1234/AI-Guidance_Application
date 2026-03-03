@@ -37,9 +37,12 @@ export function CameraFeed({ onFrameCaptured, isActive, className }: CameraFeedP
         videoRef.current.srcObject = newStream;
       }
       setError(null);
-    } catch (err) {
-      console.error('Error accessing camera:', err);
-      setError('Could not access camera. Please ensure permissions are granted.');
+    } catch (err: any) {
+      // Ignore AbortError caused by rapid toggling of the camera
+      if (err.name !== 'AbortError') {
+        console.error('Error accessing camera:', err);
+        setError('Could not access camera. Please ensure permissions are granted.');
+      }
     }
   }, [facingMode]); // stream dependency removed intentionally to avoid infinite loops
 

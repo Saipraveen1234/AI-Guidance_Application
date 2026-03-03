@@ -70,33 +70,46 @@ export function AudioController({ onSpeechRecognized, textToSpeak, isActive }: A
   }, [isActive, onSpeechRecognized]);
 
   const startListening = useCallback(() => {
+    // Prevent starting if already listening or in the process of starting
     if (recognitionRef.current && !isListening && hasSupport) {
       try {
         recognitionRef.current.start();
         setIsListening(true);
-      } catch (err) {
-        console.error("Failed to start listening:", err);
+      } catch (err: any) {
+        // Safe Catch: If it's the InvalidStateError, it just means it's already running.
+        if (err.name === 'InvalidStateError') {
+          setIsListening(true);
+        } else {
+          console.error("Failed to start listening:", err);
+        }
       }
     }
   }, [isListening, hasSupport]);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current && isListening) {
-      recognitionRef.current.stop();
+      try {
+         recognitionRef.current.stop();
+      } catch(e) {}
       setIsListening(false);
     }
   }, [isListening]);
 
   // Handle active state
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
     if (isActive) {
-      startListening();
+      // Small delay on initial start to prevent rapid toggling
+      timeoutId = setTimeout(() => {
+         startListening();
+      }, 300);
     } else {
       stopListening();
       if (synthRef.current) {
         synthRef.current.cancel(); // Stop talking
       }
     }
+    return () => clearTimeout(timeoutId);
   }, [isActive, startListening, stopListening]);
 
   // Handle speaking incoming text
