@@ -1,65 +1,129 @@
-import Image from "next/image";
+'use client';
+
+import { useState, useCallback, useRef } from 'react';
+import { CameraFeed } from '@/components/CameraFeed';
+import { AudioController } from '@/components/AudioController';
+import { GuidanceOverlay } from '@/components/GuidanceOverlay';
+import { Play, Square } from 'lucide-react';
 
 export default function Home() {
+  const [isActive, setIsActive] = useState(false);
+  const [latestFrame, setLatestFrame] = useState<string | null>(null);
+  const [currentInstruction, setCurrentInstruction] = useState<string | null>(null);
+  const [userQuery, setUserQuery] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // Keep a ref to the latest frame so the voice callback can access it without restale closures
+  const frameRef = useRef<string | null>(null);
+
+  const handleFrameCaptured = useCallback((base64Data: string) => {
+    setLatestFrame(base64Data);
+    frameRef.current = base64Data;
+  }, []);
+
+  const handleSpeechRecognized = useCallback(async (transcript: string) => {
+    setUserQuery(transcript);
+    setIsProcessing(true);
+
+    try {
+      const response = await fetch('/api/guidance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageContent: frameRef.current, // The most recently captured frame
+          textContent: transcript,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('API Request Failed');
+      }
+
+      const data = await response.json();
+      setCurrentInstruction(data.instruction);
+    } catch (error) {
+      console.error('Error fetching guidance:', error);
+      setCurrentInstruction('Sorry, I encountered an error processing that.');
+    } finally {
+      setIsProcessing(false);
+    }
+  }, []);
+
+  const toggleSession = () => {
+    if (isActive) {
+      setIsActive(false);
+      setCurrentInstruction(null);
+      setUserQuery(null);
+    } else {
+      setIsActive(true);
+      setCurrentInstruction("I'm ready. Show me what you're working on and tell me what you need help with.");
+    }
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <main className="fixed inset-0 bg-neutral-950 flex flex-col items-center justify-center p-4 sm:p-6 overflow-hidden">
+      
+      {/* Background ambient glow */}
+      <div className="absolute inset-0 bg-gradient-to-tr from-blue-900/10 via-transparent to-purple-900/10 pointer-events-none" />
+
+      {/* Main Workspace Area (Camera) */}
+      <div className="relative w-full max-w-2xl aspect-[3/4] sm:aspect-[9/16] rounded-[2.5rem] overflow-hidden shadow-2xl ring-1 ring-white/10 flex-shrink-0">
+        <CameraFeed 
+          isActive={isActive} 
+          onFrameCaptured={handleFrameCaptured} 
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+        
+        {/* The Text instructions Overlay */}
+        <GuidanceOverlay 
+          currentInstruction={currentInstruction} 
+          userQuery={userQuery} 
+        />
+
+        {/* Processing Indicator */}
+        {isProcessing && (
+          <div className="absolute top-4 right-1/2 translate-x-1/2 z-20">
+             <div className="px-3 py-1 bg-black/50 backdrop-blur-md rounded-full border border-white/10 text-xs text-blue-300 font-medium">
+                Analyzing...
+             </div>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Control Bar */}
+      <div className="fixed bottom-0 inset-x-0 p-8 pb-12 bg-gradient-to-t from-black via-black/80 to-transparent flex flex-col items-center justify-end z-30">
+        
+        {isActive && (
+          <div className="mb-6 w-full max-w-sm">
+            <AudioController 
+              isActive={isActive}
+              onSpeechRecognized={handleSpeechRecognized}
+              textToSpeak={currentInstruction}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+          </div>
+        )}
+
+        <button
+          onClick={toggleSession}
+          className={`group flex items-center justify-center space-x-3 px-8 py-4 rounded-full font-bold text-lg transition-all transform active:scale-95 shadow-xl ${
+            isActive 
+              ? 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30' 
+              : 'bg-white text-black hover:bg-neutral-200'
+          }`}
+        >
+          {isActive ? (
+            <>
+              <Square size={20} className="fill-current" />
+              <span>End Session</span>
+            </>
+          ) : (
+            <>
+              <Play size={20} className="fill-current" />
+              <span>Start Guidance</span>
+            </>
+          )}
+        </button>
+      </div>
+
+    </main>
   );
 }
